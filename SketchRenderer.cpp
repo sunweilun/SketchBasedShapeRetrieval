@@ -14,7 +14,7 @@ GLuint SketchRenderer::colorTexID = 0;
 GLuint SketchRenderer::depthBufferID = 0;
 GLuint SketchRenderer::frameBufferID = 0;
 GLuint SketchRenderer::listID = 0;
-GLuint SketchRenderer::renderSize = 512;
+GLuint SketchRenderer::renderSize = 256;
 float SketchRenderer::shrinkage = 0.9;
 float SketchRenderer::depthThres = 0.01;
 float SketchRenderer::normalAngleThres = 60;
@@ -93,7 +93,7 @@ void SketchRenderer::renderView(const glm::vec3& front, const glm::vec3& up)
     float dx = xb[1] - xb[0];
     float dy = yb[1] - yb[0];
     float len = std::max(dx, dy) / shrinkage;
-    gluOrtho2D(-len*0.5, len*0.5, -len*0.5, len*0.5);
+    glOrtho(-len*0.5, len*0.5, -len*0.5, len*0.5, -5, 5);
     
     float xc = (xb[0] + xb[1])*0.5;
     float yc = (yb[0] + yb[1])*0.5;
@@ -198,11 +198,28 @@ void SketchRenderer::loadOFF(const char* path)
     unsigned nv, nf;
     sscanf(line, "%u %u", &nv, &nf);
     vertices.resize(nv);
+    glm::vec3 ub, lb;
     for(unsigned i=0; i<nv; i++)
     {
         glm::vec3& v = vertices[i];
         fgets(line, 1024, file);
         sscanf(line, "%f %f %f", &v.x, &v.y, &v.z);
+        if(i == 0)
+        {
+            ub = lb = v;
+        }
+        else
+        {
+            ub = glm::max(ub, v);
+            lb = glm::min(lb, v);
+        }
+    }
+    glm::vec3 db = ub-lb;
+    glm::vec3 cb = (ub+lb)*0.5f;
+    float d = std::max(db.x, std::max(db.y, db.z));
+    for(unsigned i=0; i<nv; i++)
+    {
+        vertices[i] = (vertices[i] - cb) / d;
     }
     glNewList(listID, GL_COMPILE);
     
@@ -220,6 +237,8 @@ void SketchRenderer::loadOFF(const char* path)
             glm::vec3 normal = glm::cross(vertices[f[1]] - vertices[f[0]],
                 vertices[f[2]] - vertices[f[1]]);
             normal = glm::normalize(normal);
+            if(std::isnan(normal.x))
+                normal = glm::vec3(0, 0, 0);
             for(unsigned k=0; k<3; k++)
             {
                 glColor3f(normal.x, normal.y, normal.z);

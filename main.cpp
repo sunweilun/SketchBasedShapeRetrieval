@@ -8,21 +8,36 @@
 #include <cstdlib>
 #include <opencv2/highgui/highgui.hpp>
 #include "SketchRenderer.h"
+#include "Retriever.h"
+#include "utils.h"
 
 using namespace std;
 
 int main(int argc, char** argv) 
 {
-    SketchRenderer::init();
-    //SketchRenderer::load("/home/swl/Documents/Data/psb/db/0/m32/m32.off");
-    SketchRenderer::load("/home/swl/Documents/Data/psb/db/0/m76/m76.off");
-    cv::Mat1f sketch = SketchRenderer::genSketch(glm::vec3(1, 0, 0), glm::vec3(0, 1, 0));
+    std::string libPath = "/home/swl/Documents/Data/psb/";
+    Retriever retriever;
+    retriever.init();
+    retriever.setLibPath(libPath);
+    retriever.train(libPath+"cluster.bin");
     
-    cv::namedWindow("Sketch");
-    cv::Mat1b disp = sketch*255.0;
-    cv::imshow("Sketch", disp);
-    cv::waitKey(0);
-    //glutMainLoop();
+    retriever.saveTrainingData(libPath+"sbsr.bin");
+    retriever.loadTrainingData(libPath+"sbsr.bin");
+    
+    cv::Mat sketch = cv::imread("/home/swl/Documents/Data/test_sketches/lamp", CV_LOAD_IMAGE_GRAYSCALE);
+    cv::Mat1f input = sketch / 255.0;
+    std::vector<Retriever::RetrievalInfo> retrievalList = retriever.retrieveAll(input);
+    for(unsigned i=0; i<retrievalList.size(); i++)
+    {
+        printf("%s -- %f\n", retrievalList[i].path.c_str(), retrievalList[i].score);
+        SketchRenderer::load(retrievalList[i].path.c_str());
+        cv::Mat1f sketch = SketchRenderer::genSketch(
+                retrievalList[i].front, 
+                retrievalList[i].up
+                );
+        dbg(sketch);
+    }
+    
     return 0;
 }
 
