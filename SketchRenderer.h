@@ -21,6 +21,7 @@ class SketchRenderer {
 public:
     static void init();
     static void load(const char* path);
+    static cv::Mat1f genShading(const glm::vec3& front, const glm::vec3& up);
     static cv::Mat1f genSketch(const glm::vec3& front, const glm::vec3& up);
 protected:
     static void renderView(const glm::vec3& front, const glm::vec3& up);

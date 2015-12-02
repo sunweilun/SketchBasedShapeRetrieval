@@ -114,6 +114,28 @@ void SketchRenderer::renderView(const glm::vec3& front, const glm::vec3& up)
     glFlush();
 }
 
+cv::Mat1f SketchRenderer::genShading(const glm::vec3& front, const glm::vec3& up)
+{
+    cv::Mat1f image(renderSize, renderSize);
+    image.setTo(0.0);
+    renderView(front, up);
+    std::vector<glm::vec3> normalMap(renderSize*renderSize);
+    glReadPixels(0, 0, renderSize, renderSize, GL_RGB, GL_FLOAT, normalMap.data());
+    
+    for(unsigned y=0; y<renderSize; y++)
+    {
+        for(unsigned x=0; x<renderSize; x++)
+        {
+            glm::vec3 n = normalMap[(renderSize-1-y)*renderSize+x];
+            if(glm::length(n) < 0 || std::isnan(n.x))
+                continue;
+            n = glm::normalize(n);
+            image.at<float>(y, x) = fabs(glm::dot(n, front));
+        }
+    }
+    return image;
+}
+
 cv::Mat1f SketchRenderer::genSketch(const glm::vec3& front, const glm::vec3& up)
 {
     cv::Mat1f sketch(renderSize, renderSize);

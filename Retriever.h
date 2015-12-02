@@ -25,7 +25,9 @@ protected:
     unsigned oriNum;
     std::string libPath;
     cv::Mat1f dict;
-    cv::KDTree dictTree;
+    cv::flann::Index dictTree;
+    cv::Mat1f modelVecs;
+    cv::flann::Index vecTree;
     std::vector<float> idfWeights;
     
     
@@ -58,6 +60,13 @@ protected:
     void findModelFilesInLibrary(const std::string& root,
         std::vector<std::string>& pathList);
     virtual ModelInfo generateModelInfo(const std::string& path);
+    virtual cv::Mat1f getClusterFeatures();
+    virtual void filterFeatures(cv::Mat1f& features);
+    virtual void makeDict(const cv::Mat1f& clusterFeatures);
+    std::vector<unsigned> getHistFromFeatures(const cv::Mat1f& features);
+    std::vector<unsigned> getHistFromSketch(const cv::Mat1f& sketch);
+    cv::Mat1f hist2vec(const std::vector<unsigned>& hist);
+    virtual cv::Mat1f extractFeatures(const cv::Mat1f& sketch);
 public:
     struct RetrievalInfo
     {
@@ -68,17 +77,12 @@ public:
     };
     void init();
     void setLibPath(const std::string& libPath) { this->libPath = libPath; }
-    void train(const std::string& libPath);
+    void train(const std::string& clusterMatPath, const std::string& dictMatPath);
     void saveTrainingData(const std::string& path);
     void loadTrainingData(const std::string& path);
-    virtual cv::Mat1f extractFeatures(const cv::Mat1f& sketch);
-    std::vector<RetrievalInfo> retrieveAll(cv::Mat1f& input);
-    virtual cv::Mat1f getClusterFeatures();
-    virtual void filterFeatures(cv::Mat1f& features);
-    virtual void makeDict(const cv::Mat1f& clusterFeatures);
-    std::vector<unsigned> getHistFromFeatures(const cv::Mat1f& features);
-    std::vector<unsigned> getHistFromSketch(const cv::Mat1f& sketch);
-    cv::Mat1f hist2vec(const std::vector<unsigned>& hist);
+    std::vector<RetrievalInfo> retrieveAll(const cv::Mat1f& input);
+    void buildTopKDTree();
+    std::vector<RetrievalInfo> retrieveTop(const cv::Mat1f& input, unsigned k = 10);
 };
 
 #endif	/* RETRIEVER_H */

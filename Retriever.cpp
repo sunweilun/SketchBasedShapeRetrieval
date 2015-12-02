@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <iostream>
+#include <set>
 
 void Retriever::init()
 {
@@ -15,7 +16,7 @@ void Retriever::init()
     tileNum = 4;
     dictSize = 1000;
     clusterFeatNum = 1e5;
-    patchAreaRatio = 0.04;
+    patchAreaRatio = 0.1;
     oriNum = 4;
     nnApprox = true;
 }
@@ -94,7 +95,8 @@ std::vector<unsigned> Retriever::getHistFromFeatures(const cv::Mat1f& features)
         if(nnApprox)
         {
             cv::Mat neighborIndex;
-            dictTree.findNearest(features.row(f), 1, 128, neighborIndex);
+            cv::Mat dist;
+            dictTree.knnSearch(features.row(f), neighborIndex, dist, 1);
             index = neighborIndex.at<int>(0, 0);
         }
         else
@@ -117,7 +119,7 @@ std::vector<unsigned> Retriever::getHistFromFeatures(const cv::Mat1f& features)
     return hist;
 }
 
-void Retriever::train(const std::string& clusterMatPath)
+void Retriever::train(const std::string& clusterMatPath, const std::string& dictMatPath)
 {
     std::vector<std::string> pathList;
     findModelFilesInLibrary("", pathList);
@@ -144,15 +146,25 @@ void Retriever::train(const std::string& clusterMatPath)
         writeMat(clusterMatPath.c_str(), clusterFeatures);
     }
     
-    
-    printf("Making dictionary...\n");
-    makeDict(clusterFeatures);
-    printf("Done.\n");
+    if( access(dictMatPath.c_str(), F_OK) != -1 ) 
+    {
+    // file exists
+        readMat(dictMatPath.c_str(), dict);
+    } 
+    else 
+    {
+    // file doesn't exist
+        printf("Making dictionary...\n");
+        makeDict(clusterFeatures);
+        printf("Done.\n");
+        writeMat(dictMatPath.c_str(), dict);
+    }
     
     if(nnApprox)
     {
         printf("Building tree...\n");
-        dictTree.build(dict);
+        dictTree.build(dict, cv::flann::KDTreeIndexParams(), 
+                cvflann::FLANN_DIST_EUCLIDEAN);
         printf("Done.\n");
     }
     
@@ -371,7 +383,12 @@ void Retriever::loadTrainingData(const std::string& path)
     readVec<float>(file, idfWeights);
     
     if(nnApprox)
-        dictTree.build(dict);
+    {
+        printf("Building tree...\n");
+        dictTree.build(dict, cv::flann::KDTreeIndexParams(), 
+                cvflann::FLANN_DIST_EUCLIDEAN);
+        printf("Done.\n");
+    }
     
     readString(file, libPath);
     
@@ -387,8 +404,73 @@ cv::Mat1f Retriever::hist2vec(const std::vector<unsigned>& hist)
     return vec;
 }
 
+void Retriever::buildTopKDTree()
+{
+    modelVecs = cv::Mat1f(thetaNum*phiNum*models.size(), dictSize);
+    
+    modelVecs.setTo(0.0f);
+    for(unsigned i=0; i<models.size(); i++)
+    {
+        const ModelInfo& mi = models[i];
+        for(unsigned j=0; j<mi.views.size(); j++)
+        {
+            hist2vec(mi.views[j].hist).copyTo(
+                    modelVecs.row(i*thetaNum*phiNum+j));
+        }
+    }
+   
+    vecTree.build(modelVecs, cv::flann::KDTreeIndexParams(), 
+                cvflann::FLANN_DIST_EUCLIDEAN);
+}
+
 std::vector<Retriever::RetrievalInfo> 
-Retriever::retrieveAll(cv::Mat1f& input)
+Retriever::retrieveTop(const cv::Mat1f& input, unsigned k)
+{
+    std::vector<Retriever::RetrievalInfo> retrievalList(k);
+    std::vector<unsigned> hist = getHistFromSketch(input);
+    
+    cv::Mat1f vec = hist2vec(hist);
+    
+    cv::Mat neighborIndices;
+    cv::Mat dist;
+    
+    vecTree.knnSearch(vec, neighborIndices, dist, k*3,
+            cv::flann::SearchParams(512));
+    
+    std::set<unsigned> modelIndices;
+    unsigned j=0;
+    for(unsigned i=0; i<neighborIndices.cols; i++)
+    {
+        int index = neighborIndices.at<int>(i);
+        printf("index = %u\n", index);
+        unsigned mid = index / (thetaNum*phiNum);
+        if(modelIndices.find(mid) == modelIndices.end())
+        {
+            modelIndices.insert(mid);
+            neighborIndices.at<int>(j) = neighborIndices.at<int>(i);
+            dist.at<float>(j) = dist.at<float>(i);
+            j++;
+        }
+    }
+    
+    for(unsigned i=0; i<k; i++)
+    {
+        int index = neighborIndices.at<int>(i);
+        printf("index = %u\n", index);
+        unsigned mid = index / (thetaNum*phiNum);
+        const ModelInfo& mi = models[mid];
+        unsigned vid = index % (thetaNum*phiNum);
+        const ViewInfo& vi = mi.views[vid];
+        retrievalList[i].path = libPath+mi.path;
+        retrievalList[i].front = vi.front;
+        retrievalList[i].up = vi.up;
+        retrievalList[i].score = dist.at<float>(i);
+    }
+    return retrievalList;
+}
+
+std::vector<Retriever::RetrievalInfo> 
+Retriever::retrieveAll(const cv::Mat1f& input)
 {
     std::vector<unsigned> hist = getHistFromSketch(input);
     cv::Mat1f vec = hist2vec(hist);
