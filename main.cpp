@@ -12,12 +12,10 @@
 #include "utils.h"
 #include "hardCodeFunctions.h"
 
-using namespace std;
-
 int main(int argc, char** argv) 
 {
+	//train();
     show();
-    
     return 0;
 }
 
